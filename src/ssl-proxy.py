@@ -7,7 +7,11 @@ ssl_context.load_cert_chain(certfile="/run/secrets/nginx/nginx_be.pem", keyfile=
 
 async def read_client_data(client_reader, nginx_writer):
     while True:
-        client_data = await asyncio.wait_for(client_reader.read(100), timeout=5)
+        try:
+            client_data = await asyncio.wait_for(client_reader.read(100), timeout=5)
+        except asyncio.TimeoutError:
+            print('Timeout:', client_reader._transport.get_extra_info("peername"))
+            continue
         nginx_writer.write(client_data)
         if client_data:
             print('client_data - ', client_reader._transport.get_extra_info("peername"), ':', len(client_data), client_data)
@@ -16,7 +20,11 @@ async def read_client_data(client_reader, nginx_writer):
 
 async def read_nginx_reasponse(nginx_reader, client_writer, client_reader):
     while True:
-        nginx_data = await asyncio.wait_for(nginx_reader.read(100), timeout=5)
+        try:
+            nginx_data = await asyncio.wait_for(nginx_reader.read(100), timeout=5)
+        except asyncio.TimeoutError:
+            print('Timeout:', client_reader._transport.get_extra_info("peername"))
+            continue
         client_writer.write(nginx_data)
         if nginx_data:
             print('nginx_data - ', client_reader._transport.get_extra_info("peername"), ': ', len(nginx_data), nginx_data)
