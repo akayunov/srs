@@ -1,6 +1,6 @@
 import asyncio
-import pdb
 import ssl
+from uuid import uuid4
 
 ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
 ssl_context.load_cert_chain(certfile="/run/secrets/nginx/nginx_be.pem", keyfile="/run/secrets/nginx/nginx_be.key")
@@ -9,7 +9,7 @@ ssl_context.load_cert_chain(certfile="/run/secrets/nginx/nginx_be.pem", keyfile=
 HOSTNAME = 'nginx'
 
 
-async def read_client_data(client_reader, nginx_writer, client_info):
+async def read_client_data(client_reader, nginx_writer, client_info, connection_id):
     while True:
         try:
             # client_data = await asyncio.wait_for(client_reader.read(100), timeout=5)
@@ -17,17 +17,18 @@ async def read_client_data(client_reader, nginx_writer, client_info):
             client_data = await client_reader.read(100)
             if client_data:
                 nginx_writer.write(client_data)
-                print('client_data - ', client_info, ':', len(client_data), client_data)
+                print('client_data - ', connection_id, client_info, ':', len(client_data), client_data)
                 await nginx_writer.drain()
             else:
-                # print('client_data - sleep', client_info,)
-                await asyncio.sleep(1)
+                print('client_data - close', connection_id, client_info, )
+                nginx_writer.close()
+                break
         except BaseException as e:
-            print('client_data:', client_info, e)
+            print('client_data:', connection_id, client_info, e)
             break
 
 
-async def read_nginx_reasponse(nginx_reader, client_writer, client_info):
+async def read_nginx_reasponse(nginx_reader, client_writer, client_info, connection_id):
     while True:
         try:
             # nginx_data = await asyncio.wait_for(nginx_reader.read(100), timeout=5)
@@ -35,13 +36,14 @@ async def read_nginx_reasponse(nginx_reader, client_writer, client_info):
             nginx_data = await nginx_reader.read(100)
             if nginx_data:
                 client_writer.write(nginx_data)
-                print('nginx_data - ', client_info, ': ', len(nginx_data), nginx_data)
+                print('nginx_data - ', connection_id, client_info, ': ', len(nginx_data), nginx_data)
                 await client_writer.drain()
             else:
-                # print('nginx_data - sleep', client_info, )
-                await asyncio.sleep(1)
+                print('nginx_data - close', connection_id, client_info, )
+                client_writer.close()
+                break
         except BaseException as e:
-            print('nginx_data:', client_info, e)
+            print('nginx_data:', connection_id, client_info, e)
             break
 
 
@@ -50,12 +52,13 @@ loop = asyncio.get_event_loop()
 
 async def client_connected_cb(client_reader, client_writer):
     client_info = client_writer.get_extra_info('peername')
-    print('====CLIENT IP/PORT====', client_info)
+    connection_id = uuid4().hex
+    print('====CLIENT IP/PORT====', connection_id, client_info)
     # if client_reader._transport.get_extra_info('peername') != '192.168.128.91':
     #     client_reader._transport.close()
     nginx_reader, nginx_writer = await asyncio.open_connection(host=HOSTNAME, port=80, ssl=None)
-    t1 = loop.create_task(read_client_data(client_reader, nginx_writer, client_info))
-    t2 = loop.create_task(read_nginx_reasponse(nginx_reader, client_writer, client_info))
+    t1 = loop.create_task(read_client_data(client_reader, nginx_writer, client_info, connection_id))
+    t2 = loop.create_task(read_nginx_reasponse(nginx_reader, client_writer, client_info, connection_id))
     await t1
     await t2
 
